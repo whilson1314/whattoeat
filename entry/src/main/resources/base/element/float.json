@@ -1,0 +1,14 @@
+{
+  "float": [
+    { "name": "radius_card", "value": "20vp" },
+    { "name": "radius_grid", "value": "18vp" },
+    { "name": "radius_row", "value": "14vp" },
+    { "name": "radius_btn", "value": "15vp" },
+    { "name": "font_title", "value": "24fp" },
+    { "name": "font_h2", "value": "20fp" },
+    { "name": "font_h3", "value": "16fp" },
+    { "name": "font_body", "value": "14fp" },
+    { "name": "font_small", "value": "12fp" },
+    { "name": "font_tiny", "value": "10fp" }
+  ]
+}

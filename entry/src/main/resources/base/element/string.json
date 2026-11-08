@@ -1,0 +1,16 @@
+{
+  "string": [
+    {
+      "name": "module_desc",
+      "value": "今晚吃啥 - 夫妻点菜助手"
+    },
+    {
+      "name": "EntryAbility_desc",
+      "value": "今晚吃啥主入口"
+    },
+    {
+      "name": "EntryAbility_label",
+      "value": "今晚吃啥"
+    }
+  ]
+}

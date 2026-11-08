@@ -1,0 +1,29 @@
+/node_modules
+/oh_modules
+/local.properties
+/.idea
+**/build
+/.hvigor
+.cxx
+/.clangd
+/.clang-format
+/.clang-tidy
+**/.test
+/.appanalyzer
+
+# 本地私有配置（服务地址/令牌），见 README「服务端配置」
+entry/src/main/ets/config/ServerConfig.ets
+
+# 构建产物 / 大文件 / 本地文档
+/system-image
+/release
+/.zcode
+/.claude
+.DS_Store
+
+# 服务端
+server/wte_server_linux
+server/*.db
+server/*.log
+.token
+.env

@@ -1,0 +1,24 @@
+{
+  "color": [
+    { "name": "start_window_background", "value": "#16100D" },
+    { "name": "bg_cream", "value": "#201713" },
+    { "name": "surface", "value": "#2C221C" },
+    { "name": "surface_soft", "value": "#271E18" },
+    { "name": "text_primary", "value": "#F3E7DC" },
+    { "name": "text_secondary", "value": "#C7B3A4" },
+    { "name": "text_hint", "value": "#948273" },
+    { "name": "primary", "value": "#E85D3D" },
+    { "name": "primary_pressed", "value": "#D14B2E" },
+    { "name": "primary_tint", "value": "#3E2A21" },
+    { "name": "primary_border", "value": "#5C4133" },
+    { "name": "accent", "value": "#F5A623" },
+    { "name": "green", "value": "#83B061" },
+    { "name": "green_tint", "value": "#2C3423" },
+    { "name": "divider", "value": "#3C2F26" },
+    { "name": "chip_bg", "value": "#352921" },
+    { "name": "strike", "value": "#7D6C5E" },
+    { "name": "orange_tint", "value": "#3A3223" },
+    { "name": "blue_tint", "value": "#2A3138" },
+    { "name": "scrim", "value": "#99120C08" }
+  ]
+}
