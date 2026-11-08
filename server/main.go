@@ -6,8 +6,15 @@ package main
 
 import (
 	"bytes"
+	"crypto"
+	"crypto/rand"
+	"crypto/rsa"
+	"crypto/sha256"
+	"crypto/x509"
 	"database/sql"
+	"encoding/base64"
 	"encoding/json"
+	"encoding/pem"
 	"fmt"
 	"io"
 	"log"
@@ -325,40 +332,62 @@ func handleSync(w http.ResponseWriter, r *http.Request) {
 
 // ==================== 计划推送（华为 Push Kit） ====================
 // 对方把菜加入计划（新增 planned MealEntry）时，通过华为推送把通知发到另一台
-// 设备——App 未启动也能收到。凭据未配置（WTE_HW_APP_ID/WTE_HW_APP_SECRET）时
-// 仅记日志跳过，不影响同步主链路。
+// 设备——App 未启动也能收到。走 v3 场景化消息接口：URL 用项目 ID，鉴权用服务
+// 账号密钥直接签 JWT（PS256，不走 OAuth），报文 payload/target/pushOptions。
+// 密钥文件未配置时仅记日志跳过，不影响同步主链路。
 
-// hwPush 华为推送凭据与 OAuth access_token 缓存
+// hwServiceAccount AGC「项目设置→常规→服务帐号密钥」下载的 JSON（脱敏入库外）
+type hwServiceAccount struct {
+	ProjectID  string `json:"project_id"`
+	KeyID      string `json:"key_id"`
+	PrivateKey string `json:"private_key"`
+	SubAccount string `json:"sub_account"`
+	TokenURI   string `json:"token_uri"`
+}
+
+// hwPush 服务账号与 JWT 缓存（有效期 1h，提前 5 分钟续签）
 type hwPush struct {
 	mu       sync.Mutex
-	appID    string
-	secret   string
-	token    string
-	tokenExp time.Time
+	sa       *hwServiceAccount
+	jwt      string
+	jwtExp   time.Time
+	category string // 通知自分类：MARKETING 免申请；IM 等需在 AGC 申请自分类权益
+	testMsg  bool   // debug/未上架应用只能发测试消息，上架后置 false
 }
 
 var pushCfg = &hwPush{}
 
 func hwPushEnabled() bool {
-	return pushCfg.appID != "" && pushCfg.secret != ""
+	return pushCfg.sa != nil
 }
 
 func init() {
-	pushCfg.appID = os.Getenv("WTE_HW_APP_ID")
-	pushCfg.secret = os.Getenv("WTE_HW_APP_SECRET")
-	// 测试可覆盖 API 地址（默认华为线上环境）
-	if v := os.Getenv("WTE_PUSH_OAUTH_URL"); v != "" {
-		hwOauthURL = v
+	// 服务账号密钥文件（json，字段 project_id/key_id/private_key/sub_account/token_uri）
+	if v := os.Getenv("WTE_HW_SA_KEY_FILE"); v != "" {
+		buf, err := os.ReadFile(v)
+		if err != nil {
+			log.Printf("push: 读服务账号密钥失败 %s: %v", v, err)
+		} else {
+			var sa hwServiceAccount
+			if err := json.Unmarshal(buf, &sa); err != nil || sa.PrivateKey == "" {
+				log.Printf("push: 服务账号密钥解析失败（缺 private_key?）")
+			} else {
+				pushCfg.sa = &sa
+			}
+		}
 	}
+	pushCfg.category = "MARKETING"
+	if v := os.Getenv("WTE_HW_CATEGORY"); v != "" {
+		pushCfg.category = v
+	}
+	pushCfg.testMsg = os.Getenv("WTE_HW_TEST_MESSAGE") == "true"
+	// 测试可覆盖 API 地址（默认华为线上环境）
 	if v := os.Getenv("WTE_PUSH_API_URL"); v != "" {
 		hwAPIURL = v
 	}
 }
 
-var (
-	hwOauthURL = "https://oauth-login.cloud.huawei.com/oauth2/v3/token"
-	hwAPIURL   = "https://push-api.cloud.huawei.com/v1"
-)
+var hwAPIURL = "https://push-api.cloud.huawei.com"
 
 // pushEvent 一次计划新增推送的内容
 type pushEvent struct {
@@ -503,60 +532,79 @@ func dispatchPlanPush(excludeDeviceID string, events []pushEvent) {
 	}
 }
 
-// hwAccessToken 取（并缓存）华为 OAuth access_token，有效期 3600s，提前 5 分钟续期
-func hwAccessToken() (string, error) {
+// hwPushJWT 用服务账号私钥签 v3 接口的 Bearer JWT（PS256，有效期 1h，提前 5 分钟续签）。
+// 报文结构与官方 server demo 一致：header{alg,typ,kid} + payload{iss=sub_account, aud=token_uri, iat, exp}。
+func hwPushJWT() (string, error) {
 	pushCfg.mu.Lock()
 	defer pushCfg.mu.Unlock()
-	if pushCfg.token != "" && time.Now().Before(pushCfg.tokenExp) {
-		return pushCfg.token, nil
+	if pushCfg.jwt != "" && time.Now().Before(pushCfg.jwtExp) {
+		return pushCfg.jwt, nil
 	}
-	form := fmt.Sprintf("grant_type=client_credentials&client_id=%s&client_secret=%s", pushCfg.appID, pushCfg.secret)
-	resp, err := http.Post(hwOauthURL, "application/x-www-form-urlencoded", strings.NewReader(form))
+	sa := pushCfg.sa
+	block, _ := pem.Decode([]byte(sa.PrivateKey))
+	if block == nil {
+		return "", fmt.Errorf("service account key pem decode failed")
+	}
+	key, err := x509.ParsePKCS8PrivateKey(block.Bytes)
 	if err != nil {
-		return "", err
+		return "", fmt.Errorf("parse private key: %w", err)
 	}
-	defer resp.Body.Close()
-	var out struct {
-		AccessToken string `json:"access_token"`
-		ExpiresIn   int    `json:"expires_in"`
-		Error       string `json:"error"`
-		ErrorDesc   string `json:"error_description"`
+	rsaKey, ok := key.(*rsa.PrivateKey)
+	if !ok {
+		return "", fmt.Errorf("private key is not RSA")
 	}
-	if err := json.NewDecoder(io.LimitReader(resp.Body, 16<<10)).Decode(&out); err != nil {
-		return "", err
+	now := time.Now()
+	hb, _ := json.Marshal(map[string]any{"alg": "PS256", "typ": "JWT", "kid": sa.KeyID})
+	pb, _ := json.Marshal(map[string]any{
+		"iss": sa.SubAccount,
+		"aud": sa.TokenURI,
+		"iat": now.Unix(),
+		"exp": now.Add(time.Hour).Unix(),
+	})
+	b64 := func(b []byte) string { return base64.RawURLEncoding.EncodeToString(b) }
+	signingInput := b64(hb) + "." + b64(pb)
+	h := sha256.Sum256([]byte(signingInput))
+	sig, err := rsa.SignPSS(rand.Reader, rsaKey, crypto.SHA256, h[:], &rsa.PSSOptions{SaltLength: rsa.PSSSaltLengthEqualsHash})
+	if err != nil {
+		return "", fmt.Errorf("sign jwt: %w", err)
 	}
-	if out.AccessToken == "" {
-		return "", fmt.Errorf("oauth %s: %s %s", resp.Status, out.Error, out.ErrorDesc)
-	}
-	pushCfg.token = out.AccessToken
-	pushCfg.tokenExp = time.Now().Add(time.Duration(out.ExpiresIn-300) * time.Second)
-	return pushCfg.token, nil
+	pushCfg.jwt = signingInput + "." + b64(sig)
+	pushCfg.jwtExp = now.Add(55 * time.Minute)
+	return pushCfg.jwt, nil
 }
 
-// sendHwPush 调华为 Push REST API 发一条通知消息（clickAction=打开应用首页）
+// sendHwPush 调华为 Push v3 REST API 发一条通知消息（actionType=0 点击打开应用首页）
 func sendHwPush(deviceToken, title, body string) error {
-	at, err := hwAccessToken()
+	jwt, err := hwPushJWT()
 	if err != nil {
-		return fmt.Errorf("get access token: %w", err)
+		return fmt.Errorf("get jwt: %w", err)
 	}
 	msg := map[string]any{
-		"validate_only": false,
-		"message": map[string]any{
+		"payload": map[string]any{
 			"notification": map[string]any{
+				"category":    pushCfg.category, // v3 必填：通知自分类
 				"title":       title,
 				"body":        body,
-				"clickAction": map[string]any{"type": 1}, // 1=打开应用首页
+				"clickAction": map[string]any{"actionType": 0}, // 0=打开应用首页
+				"badge":       map[string]any{"addNum": 1},     // 图标角标累加；端侧回前台清零
 			},
-			"token": []string{deviceToken},
 		},
+		"target":      map[string]any{"token": []string{deviceToken}},
+		"pushOptions": map[string]any{"testMessage": pushCfg.testMsg}, // debug/未上架应用只能发测试消息
 	}
 	buf, _ := json.Marshal(msg)
-	req, err := http.NewRequest("POST", hwAPIURL+"/"+pushCfg.appID+"/messages:send", bytes.NewReader(buf))
+	// v3 URL 用项目 ID（SA 文件缺 project_id 时回退环境变量）
+	pathID := pushCfg.sa.ProjectID
+	if pathID == "" {
+		pathID = os.Getenv("WTE_HW_PROJECT_ID")
+	}
+	req, err := http.NewRequest("POST", hwAPIURL+"/v3/"+pathID+"/messages:send", bytes.NewReader(buf))
 	if err != nil {
 		return err
 	}
-	req.Header.Set("Content-Type", "application/json")
-	req.Header.Set("Authorization", "Bearer "+at)
+	req.Header.Set("Content-Type", "application/json; charset=UTF-8")
+	req.Header.Set("Authorization", "Bearer "+jwt)
+	req.Header.Set("push-type", "0") // 0=通知消息（ALERT）
 	client := &http.Client{Timeout: 10 * time.Second}
 	resp, err := client.Do(req)
 	if err != nil {
@@ -571,11 +619,13 @@ func sendHwPush(deviceToken, title, body string) error {
 	if out.Code == "80000000" {
 		return nil
 	}
-	if out.Code == "80300007" { // token 失效：清理注册行，等设备下次启动重新登记
+	if out.Code == "80300007" { // token 失效：清理注册行，等设备下次启动重新登记。
+		// 30 分钟内注册的新 token 不删：服务开通/权益传播期间云端会误报失效（2026-11-08 实测连删三次新 token）
 		mu.Lock()
-		_, _ = db.Exec(`DELETE FROM devices WHERE push_token = ?`, deviceToken)
+		_, _ = db.Exec(`DELETE FROM devices WHERE push_token = ? AND updated_at < ?`,
+			deviceToken, time.Now().Add(-30*time.Minute).UnixMilli())
 		mu.Unlock()
-		return fmt.Errorf("token invalid (%s %s), device row removed", out.Code, out.Msg)
+		return fmt.Errorf("token invalid (%s %s)", out.Code, out.Msg)
 	}
 	return fmt.Errorf("push api %s: %s %s", resp.Status, out.Code, out.Msg)
 }

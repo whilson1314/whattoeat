@@ -4,6 +4,7 @@
     "products": [
       {
         "name": "default",
+        "signingConfig": "default",
         "targetSdkVersion": "26.0.0",
         "compatibleSdkVersion": "26.0.0",
         "runtimeOS": "HarmonyOS",
@@ -17,10 +18,25 @@
     ],
     "buildModeSet": [
       {
-        "name": "debug",
+        "name": "debug"
       },
       {
         "name": "release"
+      }
+    ],
+    "capabilities": [
+      {
+        "bundleName": "com.whilson.whattoeat",
+        "config": [
+          {
+            "name": "Push Kit",
+            "capability": "com.huawei.service.push.base_service"
+          },
+          {
+            "name": "Device status detection",
+            "capability": "com.huawei.service.device_security.device_verify"
+          }
+        ]
       }
     ]
   },

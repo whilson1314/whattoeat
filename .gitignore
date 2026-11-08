@@ -27,3 +27,6 @@ server/*.db
 server/*.log
 .token
 .env
+# 服务端构建产物
+server/.hvigor/
+server/whattoeat-server

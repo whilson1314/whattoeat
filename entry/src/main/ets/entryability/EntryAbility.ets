@@ -177,6 +177,10 @@ export default class EntryAbility extends UIAbility {
   onForeground(): void {
     hilog.info(DOMAIN, TAG, '%{public}s', 'Ability onForeground');
     SyncService.setForeground(true);
+    // 清零推送角标（服务端 badge.addNum 累加，用户回来看过计划即清）
+    notificationManager.setBadgeNumber(0).catch((e: BusinessError): void => {
+      hilog.info(DOMAIN, TAG, 'setBadgeNumber fail: %{public}d', e.code);
+    });
   }
 
   onBackground(): void {

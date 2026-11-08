@@ -46,6 +46,12 @@ struct SettingsPage {
     this.budgetV = this.ad.settings.weeklyBudget;
     this.lunchTimeV = this.ad.settings.lunchTime;
     this.dinnerTimeV = this.ad.settings.dinnerTime;
+    // 登录态从持久化的 currentUid 回填（loginState 是页面局部状态，进页需恢复）
+    if (this.ad.settings.currentUid.length > 0) {
+      this.loginState = 'ok';
+      const bound = this.ad.settings.uidName.get(this.ad.settings.currentUid);
+      this.loginMsg = '身份：' + (bound !== undefined && bound.length > 0 ? bound : this.ad.settings.currentMember);
+    }
   }
 
   save(): void {
@@ -93,7 +99,8 @@ struct SettingsPage {
             .alignItems(HorizontalAlign.Start)
             .layoutWeight(1)
 
-            Button(this.loginState === 'logging' ? '授权中…' : '华为账号登录')
+            Button(this.loginState === 'logging' ? '授权中…'
+              : (this.loginState === 'ok' ? '重新绑定' : '华为账号登录'))
               .fontSize(12)
               .fontColor(Color.White)
               .backgroundColor($r('app.color.primary'))
