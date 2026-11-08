@@ -58,6 +58,16 @@ export const TOKEN: string = 'wte_<你的访问令牌>';
 
 不创建该文件工程无法编译；不部署服务端也可单机使用（同步与 AI 功能自动降级）。
 
+## 推送（华为 Push Kit）控制台申请
+
+对方点菜的系统级推送走华为 Push Kit v3，除服务端凭据外还需在 [HarmonyOS 开发者中心](https://developer.huawei.com/consumer/cn/hdc-console/) 完成三项一次性配置：
+
+1. **开通推送服务能力**：应用管理 → 你的应用 → 基础信息 → 能力开关，勾选「推送服务」（子项「应用内通话/语音播报消息」本应用用不到，无需申请）。
+2. **下载服务账号密钥**：项目设置 → 常规 → 服务帐号密钥 → 创建并下载 JSON（含 `project_id / key_id / private_key / sub_account / token_uri`），上传服务器后以 `WTE_HW_SA_KEY_FILE` 指定路径，见 [server/README.md](server/README.md)。推送走 v3 接口，用该私钥直接签 JWT 鉴权（PS256）。
+3. **申请自分类权益（强烈建议）**：推广运营 → 增长运营 → 推送服务 → 申请消息类型，选「即时聊天（IM）」并附消息示例，3 个工作日审核。未申请时通知归入资讯营销类：**不弹横幅、穿戴设备不展示、每设备每日限 2~5 条**；审批通过后服务端设 `WTE_HW_CATEGORY=IM` 即获得完整通知体验。
+
+客户端无需额外申请（`module.json5` 已内置 `client_id` metadata）；调试期服务端保持 `WTE_HW_TEST_MESSAGE=true`（走每日 1000 条测试消息额度），应用上架后改为 `false`。
+
 ## 服务端
 
 见 [server/README.md](server/README.md)：Go 编写、SQLite 存储、单一 Bearer Token 鉴权，提供 `/sync`（双机同步）、`/llm`（LLM 代理与限额）、`/register`（推送注册）、`/health` 四个接口。

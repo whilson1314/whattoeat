@@ -35,8 +35,10 @@ GOOS=linux GOARCH=amd64 go build -o wte_server_linux .
 | `WTE_LLM_ACTIONS` | 放行的动作白名单，逗号分隔（`generate,recommend,fridge,substitute` 的子集） |
 | `WTE_LLM_DAILY_LIMIT` / `WTE_LLM_MONTHLY_LIMIT` | 按天 / 按月调用次数限额 |
 | `WTE_LLM_MONTHLY_TOKENS` | 按月 token 限额 |
-| `WTE_HW_APP_ID` / `WTE_HW_APP_SECRET` | 华为 Push Kit 凭据（OAuth client_credentials 换取 access token） |
-| `WTE_PUSH_OAUTH_URL` / `WTE_PUSH_API_URL` | 华为 OAuth / 推送接口地址（仅测试覆盖用） |
+| `WTE_HW_SA_KEY_FILE` | 华为 Push Kit v3 服务账号密钥 JSON 路径（开发者中心「服务帐号密钥」下载，含 `project_id/key_id/private_key/sub_account/token_uri`；未配置时推送关闭，不影响同步） |
+| `WTE_HW_CATEGORY` | 通知自分类，默认 `MARKETING`（免申请，但静默无横幅、穿戴不展示、每设备每日限 2~5 条）；申请 IM 自分类权益后改为 `IM` |
+| `WTE_HW_TEST_MESSAGE` | `true` 走测试消息通道（调试期必开，全网每日 1000 条额度）；应用上架后改 `false` 发正式消息 |
+| `WTE_PUSH_API_URL` | 推送接口地址（仅测试覆盖用） |
 | `WTE_XHS_BASE_URL` / `WTE_XHS_TOKEN` | 可选：本地小红书灵感检索服务的地址与令牌 |
 | `WTE_XHS_DAILY_LIMIT` | 小红书搜索每日限额 |
 
@@ -54,8 +56,8 @@ Environment=WTE_LLM_API_KEY=<your-llm-key>
 Environment=WTE_LLM_BASE_URL=https://api.deepseek.com
 Environment=WTE_LLM_MODEL=deepseek-chat
 Environment=WTE_LLM_ACTIONS=generate,recommend,fridge,substitute
-Environment=WTE_HW_APP_ID=<your-app-id>
-Environment=WTE_HW_APP_SECRET=<your-app-secret>
+Environment=WTE_HW_SA_KEY_FILE=/opt/wte/data/hw_sa.json
+Environment=WTE_HW_TEST_MESSAGE=true
 Restart=always
 
 [Install]
