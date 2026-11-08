@@ -1,0 +1,16 @@
+#!/bin/bash
+# 敏感数据提交拦截钩子（随仓库分发）
+# 启用：git config core.hooksPath scripts/hooks
+# 命中即拒绝提交；确认为误报时可用 git commit --no-verify 跳过
+
+# 注：模式串用 [x] 断言写法避免匹配到本文件自身
+pat='wte_[0-9a-f]{16,}|139\.199\.[0-9]+\.[0-9]+|0000001B[0-9A-Fa-f]{20,}|keyPasswo[r]d|storePasswo[r]d|certpa[t]h|storeFil[e]|/Users/ma[c]|wangx[u]n|nin[i]menu|n[i]ni|sk-[A-Za-z0-9]{20,}|AKL[T]|BEGIN [A-Z ]*PRIVATE KEY|\.p1[2]|\.p7[b]'
+
+hits=$(git diff --cached -U0 --no-color 2>/dev/null | grep -E '^\+' | grep -inE "$pat")
+if [ -n "$hits" ]; then
+  echo "✖ pre-commit：暂存内容命中敏感数据模式，提交被拦截："
+  echo "$hits" | head -20
+  echo "（确认是误报时可用 git commit --no-verify 跳过）"
+  exit 1
+fi
+exit 0
